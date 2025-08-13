@@ -1,6 +1,7 @@
 name: Build & Release Zotero XPI
 
 
+
 on:
   push:
     tags: ['v*']          # run on tags like v2.1.7
