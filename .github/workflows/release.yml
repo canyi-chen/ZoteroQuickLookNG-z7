@@ -21,6 +21,13 @@ jobs:
       - name: Check out
         uses: actions/checkout@v4
 
+      - name: Show repo tree (debug)
+        run: |
+          echo "Tag: $GITHUB_REF_NAME"
+          ls -la
+          echo "---- dist ----"
+          ls -la dist || true
+
       # 1) Get version from tag and see if a prebuilt XPI exists
       - name: Resolve version & pick XPI
         id: vars
@@ -39,6 +46,7 @@ jobs:
 
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "xpi=$XPI"         >> "$GITHUB_OUTPUT"
+          echo "Prebuilt XPI path: ${XPI:-<none>}"
 
       # 2) If no prebuilt file, build it from repo contents
       - name: Build XPI (if no prebuilt file)
@@ -57,7 +65,8 @@ jobs:
 
           # If we have nothing to pack, fail with a clear message
           if [[ "${#include[@]}" -eq 2 && ! -e "manifest.json" ]]; then
-            echo "No XPI provided and no source files found. Put an XPI in dist/ or add source files." >&2
+            echo "No XPI provided and no source files found."
+            echo "Put an XPI in dist/ or add your add-on source (manifest.json, etc.) to the repo root."
             exit 1
           fi
 
@@ -65,6 +74,7 @@ jobs:
           zip -r "$FILE" "${include[@]}" \
             -x ".git/*" ".github/*" "dist/*" "docs/*" "scripts/*" "*.md"
 
+          test -s "$FILE" || (echo "Build produced no file at $FILE" >&2; exit 1)
           echo "xpi=$FILE" >> "$GITHUB_OUTPUT"
 
       # 3) Decide final XPI path (prebuilt vs built)
@@ -72,25 +82,85 @@ jobs:
         id: xpi
         run: |
           set -euo pipefail
-          if [[ -n "${{ steps.vars.outputs.xpi }}" ]]; then
-            echo "path=${{ steps.vars.outputs.xpi }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "path=${{ steps.build.outputs.xpi }}" >> "$GITHUB_OUTPUT"
+          XPI="${{ steps.vars.outputs.xpi }}"
+          if [[ -z "$XPI" ]]; then
+            XPI="${{ steps.build.outputs.xpi }}"
           fi
-          echo "Chosen XPI: $(cat $GITHUB_OUTPUT | tail -n1)"
+          echo "path=$XPI" >> "$GITHUB_OUTPUT"
+          echo "Chosen XPI: $XPI"
 
-      # 4) Compute SHA256 for update.json
+      # 4) Assert XPI exists (hard stop if not)
+      - name: Assert XPI exists
+        run: |
+          set -euo pipefail
+          test -s "${{ steps.xpi.outputs.path }}" || (echo "ERROR: XPI missing at ${{ steps.xpi.outputs.path }}" >&2; exit 1)
+          ls -l "${{ steps.xpi.outputs.path }}"
+
+      # 5) Compute SHA256 for update.json
       - name: Compute SHA256
         id: sha
         run: |
           set -euo pipefail
           HASH=$(sha256sum "${{ steps.xpi.outputs.path }}" | awk '{print $1}')
           echo "hash=$HASH" >> "$GITHUB_OUTPUT"
+          echo "SHA256: $HASH"
 
-      # 5) Maintain a static 'release' tag for a stable update.json URL
+      # 6) Maintain a static 'release' tag for a stable update.json URL
       - name: Create/force 'release' tag (static URL for update.json)
         run: |
           git tag -f release
           git push -f origin release
 
-      #
+      # 7) Generate update.json (Zotero auto-update manifest)
+      - name: Generate update.json
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.vars.outputs.version }}"
+          REPO="${{ github.repository }}"
+          HASH="${{ steps.sha.outputs.hash }}"
+          FILE="$(basename "${{ steps.xpi.outputs.path }}")"
+          cat > update.json <<JSON
+          {
+            "addons": {
+              "${{ env.ADDON_ID }}": {
+                "updates": [
+                  {
+                    "version": "$VERSION",
+                    "update_link": "https://github.com/$REPO/releases/download/v$VERSION/$FILE",
+                    "update_hash": "sha256:$HASH",
+                    "applications": {
+                      "zotero": {
+                        "strict_min_version": "${{ env.MIN_ZOTERO }}",
+                        "strict_max_version": "${{ env.MAX_ZOTERO }}"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+          JSON
+          echo "Generated update.json:"
+          cat update.json
+
+      # 8) Publish the versioned release with the XPI
+      - name: Publish versioned release with XPI
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ env.EXT_NAME }} ${{ steps.vars.outputs.version }}
+          files: ${{ steps.xpi.outputs.path }}
+          fail_on_unmatched_files: true
+          draft: false
+          prerelease: false
+
+      # 9) Attach update.json to the static 'release' tag
+      - name: Attach update.json to 'release' tag
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: release
+          name: Update manifest
+          files: update.json
+          fail_on_unmatched_files: true
+          draft: false
+          prerelease: false
