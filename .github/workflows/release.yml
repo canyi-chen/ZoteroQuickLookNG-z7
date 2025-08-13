@@ -1,0 +1,115 @@
+name: Build & Release Zotero XPI
+
+on:
+  push:
+    tags: ['v*']          # run on tags like v2.1.7
+  workflow_dispatch: {} # allow manual runs
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      EXT_NAME: ZoteroQuickLookNG-z7
+      ADDON_ID: cychen.stats@outlook.com
+      MIN_ZOTERO: "6.999"
+      MAX_ZOTERO: "8.0.*"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version and decide XPI path
+        id: vars
+        shell: bash
+        run: |
+          VERSION="${ github.ref_name#v }"
+          SIMPLE="dist/ZoteroQuickLookNG-z7-${VERSION}.xpi"
+          RELEASED="dist/ZoteroQuickLookNG-z7-${VERSION}-release.xpi"
+          if [[ -f "$SIMPLE" ]]; then
+            XPI="$SIMPLE"
+          elif [[ -f "$RELEASED" ]]; then
+            XPI="$RELEASED"
+          else
+            XPI=""
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "xpi=$XPI" >> $GITHUB_OUTPUT
+
+      - name: Build XPI from repository files (if not provided in dist/)
+        if: steps.vars.outputs.xpi == ''
+        shell: bash
+        run: |
+          VERSION="${ steps.vars.outputs.version }"
+          FILE="dist/ZoteroQuickLookNG-z7-${VERSION}.xpi"
+          mkdir -p dist
+          include=(manifest.json bootstrap.js)
+          for d in content defaults locale chrome resources modules; do
+            [[ -e "$d" ]] && include+=("$d")
+          done
+          if [[ "${#include[@]}" -eq 2 && ! -e "manifest.json" ]]; then
+            echo "No XPI provided and no source files found. Put an XPI in dist/ or add source files." >&2
+            exit 1
+          fi
+          echo "Packing from repo: ${include[*]}"
+          zip -r "$FILE" "${include[@]}" -x ".git/*" ".github/*" "dist/*" "docs/*" "scripts/*" "*.md"
+          echo "Built $FILE"
+          echo "xpi=$FILE" >> $GITHUB_OUTPUT
+
+      - name: Compute SHA256
+        id: sha
+        run: |
+          HASH=$(sha256sum "${ steps.vars.outputs.xpi }" | awk '{print $1}')
+          echo "hash=$HASH" >> $GITHUB_OUTPUT
+
+      - name: Create/force 'release' tag (static URL for update.json)
+        run: |
+          git tag -f release
+          git push -f origin release
+
+      - name: Generate update.json
+        run: |
+          VERSION="${ steps.vars.outputs.version }"
+          REPO="${ github.repository }"
+          HASH="${ steps.sha.outputs.hash }"
+          FILE="$(basename "${ steps.vars.outputs.xpi }")"
+          cat > update.json <<JSON
+          {
+            "addons": {
+              "cychen.stats@outlook.com": {
+                "updates": [
+                  {
+                    "version": "$VERSION",
+                    "update_link": "https://github.com/$REPO/releases/download/v$VERSION/$FILE",
+                    "update_hash": "sha256:$HASH",
+                    "applications": {
+                      "zotero": {
+                        "strict_min_version": "{{ env.MIN_ZOTERO }}",
+                        "strict_max_version": "{{ env.MAX_ZOTERO }}"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+          JSON
+          echo "Generated update.json:"
+          cat update.json
+
+      - name: Publish versioned release with XPI
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ZoteroQuickLookNG-z7 ${{ steps.vars.outputs.version }}
+          files: ${{ steps.vars.outputs.xpi }}
+          draft: false
+          prerelease: false
+
+      - name: Attach update.json to 'release' tag
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: release
+          name: Update manifest
+          files: update.json
+          draft: false
+          prerelease: false
