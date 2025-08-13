@@ -1,0 +1,18 @@
+{
+  "manifest_version": 2,
+  "name": "ZoteroQuickLookNG (Z7 2.1.7 release)",
+  "version": "2.1.7.1",
+  "description": "Quick Look for Zotero 7 with robust fallbacks. Release build: no debug banners, toasts, or alerts.",
+  "author": "Canyi Chen",
+  "icons": {
+    "96": "content/icon-96.png"
+  },
+  "applications": {
+    "zotero": {
+      "id": "cychen.stats@outlook.com",
+      "strict_min_version": "6.999",
+      "strict_max_version": "8.0.*",
+      "update_url": "https://github.com/canyi-chen/ZoteroQuickLookNG-z7/releases/download/release/update.json"
+    }
+  }
+}
