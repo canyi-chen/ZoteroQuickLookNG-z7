@@ -9,7 +9,7 @@ This repo template lets you publish **ZoteroQuickLookNG-z7-2.1.7-release.xpi** o
    {
      "applications": {
        "zotero": {
-         "id": "ZoteroQuickLookNG@beaugunderson.com",
+         "id": "zql7@cychen.dev",
          "strict_min_version": "6.999",
          "strict_max_version": "7.0.*",
          "update_url": "https://github.com/<OWNER>/<REPO>/releases/download/release/update.json"

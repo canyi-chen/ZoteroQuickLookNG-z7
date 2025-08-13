@@ -1,37 +1,53 @@
-name: Release ZoteroQuickLookNG
+name: Build & Release Zotero XPI
 
 on:
   push:
-    tags:
-      - 'v*'
+    tags: ['v*']          # runs when you push a tag like v2.1.7
+  workflow_dispatch: {}   # allow manual runs
 
 jobs:
   release:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+
+    env:
+      EXT_NAME: ZoteroQuickLookNG-z7                 # base filename (no version)
+      ADDON_ID: zql7@cychen.dev  # your add-on id
+      MIN_ZOTERO: "6.999"
+      MAX_ZOTERO: "8.0.*"
+
     steps:
       - name: Check out
         uses: actions/checkout@v4
 
-      - name: Resolve version variables
+      - name: Resolve version and output names
         id: vars
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "xpi=dist/ZoteroQuickLookNG-z7-$VERSION.xpi" >> $GITHUB_OUTPUT
+          echo "file=${EXT_NAME}-${VERSION}.xpi" >> $GITHUB_OUTPUT
 
-      - name: Verify XPI exists
+      - name: Build XPI (zip add-on files)
         run: |
-          test -f "${{ steps.vars.outputs.xpi }}" || (echo "Missing ${{ steps.vars.outputs.xpi }}"; exit 1)
+          mkdir -p dist
+          FILE="dist/${{ steps.vars.outputs.file }}"
+          include=(manifest.json bootstrap.js)
+          for d in content defaults locale chrome resources modules; do
+            [ -e "$d" ] && include+=("$d")
+          done
+          echo "Packing: ${include[*]}"
+          zip -r "$FILE" "${include[@]}" \
+            -x ".git/*" ".github/*" "dist/*" "docs/*" "scripts/*" "*.md"
+          test -f "$FILE" || (echo "Build failed (XPI not found)"; exit 1)
 
       - name: Compute SHA256
         id: sha
         run: |
-          HASH=$(sha256sum "${{ steps.vars.outputs.xpi }}" | awk '{print $1}')
+          HASH=$(sha256sum "dist/${{ steps.vars.outputs.file }}" | awk '{print $1}')
           echo "hash=$HASH" >> $GITHUB_OUTPUT
 
-      - name: Create/update tag 'release' for static update.json URL
+      - name: Create/force 'release' tag (static URL for update.json)
         run: |
           git tag -f release
           git push -f origin release
@@ -41,19 +57,20 @@ jobs:
           VERSION="${{ steps.vars.outputs.version }}"
           REPO="${{ github.repository }}"
           HASH="${{ steps.sha.outputs.hash }}"
+          FILE="${{ steps.vars.outputs.file }}"
           cat > update.json <<JSON
           {
             "addons": {
-              "ZoteroQuickLookNG@beaugunderson.com": {
+              "${{ env.ADDON_ID }}": {
                 "updates": [
                   {
                     "version": "$VERSION",
-                    "update_link": "https://github.com/$REPO/releases/download/v$VERSION/ZoteroQuickLookNG-z7-$VERSION.xpi",
+                    "update_link": "https://github.com/$REPO/releases/download/v$VERSION/$FILE",
                     "update_hash": "sha256:$HASH",
                     "applications": {
                       "zotero": {
-                        "strict_min_version": "6.999",
-                        "strict_max_version": "7.0.*"
+                        "strict_min_version": "${{ env.MIN_ZOTERO }}",
+                        "strict_max_version": "${{ env.MAX_ZOTERO }}"
                       }
                     }
                   }
@@ -62,17 +79,19 @@ jobs:
             }
           }
           JSON
+          echo "Generated update.json:"
+          cat update.json
 
-      - name: Create versioned release and upload XPI
+      - name: Publish versioned release with XPI
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: ZoteroQuickLookNG ${{ steps.vars.outputs.version }}
-          files: ${{ steps.vars.outputs.xpi }}
+          name: ${{ env.EXT_NAME }} ${{ steps.vars.outputs.version }}
+          files: dist/${{ steps.vars.outputs.file }}
           draft: false
           prerelease: false
 
-      - name: Upload update.json to 'release' tag
+      - name: Attach update.json to 'release' tag
         uses: softprops/action-gh-release@v2
         with:
           tag_name: release
