@@ -1,0 +1,19 @@
+{
+  "addons": {
+    "ZoteroQuickLookNG@beaugunderson.com": {
+      "updates": [
+        {
+          "version": "2.1.7",
+          "update_link": "https://github.com/canyi-chen/ZoteroQuickLookNG-z7/releases/download/v2.1.7/ZoteroQuickLookNG-z7-2.1.7-release.xpi",
+          "update_hash": "sha256:<SHA256>",
+          "applications": {
+            "zotero": {
+              "strict_min_version": "6.999",
+              "strict_max_version": "7.0.*"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

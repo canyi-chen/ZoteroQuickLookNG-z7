@@ -1,0 +1,82 @@
+name: Release ZoteroQuickLookNG
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Resolve version variables
+        id: vars
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "xpi=dist/ZoteroQuickLookNG-z7-$VERSION.xpi" >> $GITHUB_OUTPUT
+
+      - name: Verify XPI exists
+        run: |
+          test -f "${{ steps.vars.outputs.xpi }}" || (echo "Missing ${{ steps.vars.outputs.xpi }}"; exit 1)
+
+      - name: Compute SHA256
+        id: sha
+        run: |
+          HASH=$(sha256sum "${{ steps.vars.outputs.xpi }}" | awk '{print $1}')
+          echo "hash=$HASH" >> $GITHUB_OUTPUT
+
+      - name: Create/update tag 'release' for static update.json URL
+        run: |
+          git tag -f release
+          git push -f origin release
+
+      - name: Generate update.json
+        run: |
+          VERSION="${{ steps.vars.outputs.version }}"
+          REPO="${{ github.repository }}"
+          HASH="${{ steps.sha.outputs.hash }}"
+          cat > update.json <<JSON
+          {
+            "addons": {
+              "ZoteroQuickLookNG@beaugunderson.com": {
+                "updates": [
+                  {
+                    "version": "$VERSION",
+                    "update_link": "https://github.com/$REPO/releases/download/v$VERSION/ZoteroQuickLookNG-z7-$VERSION.xpi",
+                    "update_hash": "sha256:$HASH",
+                    "applications": {
+                      "zotero": {
+                        "strict_min_version": "6.999",
+                        "strict_max_version": "7.0.*"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+          JSON
+
+      - name: Create versioned release and upload XPI
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ZoteroQuickLookNG ${{ steps.vars.outputs.version }}
+          files: ${{ steps.vars.outputs.xpi }}
+          draft: false
+          prerelease: false
+
+      - name: Upload update.json to 'release' tag
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: release
+          name: Update manifest
+          files: update.json
+          draft: false
+          prerelease: false

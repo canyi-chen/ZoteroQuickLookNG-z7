@@ -1,0 +1,10 @@
+{
+  "applications": {
+    "zotero": {
+      "id": "ZoteroQuickLookNG@beaugunderson.com",
+      "strict_min_version": "6.999",
+      "strict_max_version": "7.0.*",
+      "update_url": "https://github.com/canyi-chen/ZoteroQuickLookNG-z7/releases/download/release/update.json"
+    }
+  }
+}
