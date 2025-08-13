@@ -1,121 +1,96 @@
 name: Build & Release Zotero XPI
 
-
-
 on:
   push:
-    tags: ['v*']          # run on tags like v2.1.7
-  workflow_dispatch: {} # allow manual runs
+    tags: ['v*']          # runs when you push a tag like v2.1.7
+  workflow_dispatch: {}   # allow manual runs
 
 jobs:
   release:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+
     env:
-      EXT_NAME: ZoteroQuickLookNG-z7
-      ADDON_ID: cychen.stats@outlook.com
+      EXT_NAME: ZoteroQuickLookNG-z7                # base filename (no version)
+      ADDON_ID: cychen.stats@outlook.com            # your add-on id
       MIN_ZOTERO: "6.999"
       MAX_ZOTERO: "8.0.*"
-    steps:
-      - uses: actions/checkout@v4
 
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      # 1) Get version from tag and see if a prebuilt XPI exists
       - name: Resolve version & pick XPI
         id: vars
         run: |
-            set -euo pipefail
-            # Strip leading "v" from tag name (e.g., v2.1.7 -> 2.1.7)
-            VERSION="${GITHUB_REF_NAME#v}"
-            SIMPLE="dist/${{ env.EXT_NAME }}-${VERSION}.xpi"
-            RELEASED="dist/${{ env.EXT_NAME }}-${VERSION}-release.xpi"
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          SIMPLE="dist/${{ env.EXT_NAME }}-${VERSION}.xpi"
+          RELEASED="dist/${{ env.EXT_NAME }}-${VERSION}-release.xpi"
 
-            if [[ -f "$SIMPLE" ]]; then
+          XPI=""
+          if [[ -f "$SIMPLE" ]]; then
             XPI="$SIMPLE"
-            elif [[ -f "$RELEASED" ]]; then
+          elif [[ -f "$RELEASED" ]]; then
             XPI="$RELEASED"
-            else
-            echo "No XPI found at: $SIMPLE or $RELEASED" >&2
-            XPI=""
-            fi
+          fi
 
-            echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-            echo "xpi=$XPI"       >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "xpi=$XPI"         >> "$GITHUB_OUTPUT"
 
-      - name: Build XPI from repository files (if not provided in dist/)
-        if: steps.vars.outputs.xpi == ''
-        shell: bash
+      # 2) If no prebuilt file, build it from repo contents
+      - name: Build XPI (if no prebuilt file)
+        id: build
+        if: ${{ steps.vars.outputs.xpi == '' }}
         run: |
-          VERSION="${ steps.vars.outputs.version }"
-          FILE="dist/ZoteroQuickLookNG-z7-${VERSION}.xpi"
+          set -euo pipefail
+          VERSION="${{ steps.vars.outputs.version }}"
+          FILE="dist/${{ env.EXT_NAME }}-${VERSION}.xpi"
+
           mkdir -p dist
           include=(manifest.json bootstrap.js)
           for d in content defaults locale chrome resources modules; do
             [[ -e "$d" ]] && include+=("$d")
           done
+
+          # If we have nothing to pack, fail with a clear message
           if [[ "${#include[@]}" -eq 2 && ! -e "manifest.json" ]]; then
             echo "No XPI provided and no source files found. Put an XPI in dist/ or add source files." >&2
             exit 1
           fi
-          echo "Packing from repo: ${include[*]}"
-          zip -r "$FILE" "${include[@]}" -x ".git/*" ".github/*" "dist/*" "docs/*" "scripts/*" "*.md"
-          echo "Built $FILE"
-          echo "xpi=$FILE" >> $GITHUB_OUTPUT
 
+          echo "Packing: ${include[*]}"
+          zip -r "$FILE" "${include[@]}" \
+            -x ".git/*" ".github/*" "dist/*" "docs/*" "scripts/*" "*.md"
+
+          echo "xpi=$FILE" >> "$GITHUB_OUTPUT"
+
+      # 3) Decide final XPI path (prebuilt vs built)
+      - name: Determine XPI path
+        id: xpi
+        run: |
+          set -euo pipefail
+          if [[ -n "${{ steps.vars.outputs.xpi }}" ]]; then
+            echo "path=${{ steps.vars.outputs.xpi }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "path=${{ steps.build.outputs.xpi }}" >> "$GITHUB_OUTPUT"
+          fi
+          echo "Chosen XPI: $(cat $GITHUB_OUTPUT | tail -n1)"
+
+      # 4) Compute SHA256 for update.json
       - name: Compute SHA256
         id: sha
         run: |
-          HASH=$(sha256sum "${ steps.vars.outputs.xpi }" | awk '{print $1}')
-          echo "hash=$HASH" >> $GITHUB_OUTPUT
+          set -euo pipefail
+          HASH=$(sha256sum "${{ steps.xpi.outputs.path }}" | awk '{print $1}')
+          echo "hash=$HASH" >> "$GITHUB_OUTPUT"
 
+      # 5) Maintain a static 'release' tag for a stable update.json URL
       - name: Create/force 'release' tag (static URL for update.json)
         run: |
           git tag -f release
           git push -f origin release
 
-      - name: Generate update.json
-        run: |
-          VERSION="${ steps.vars.outputs.version }"
-          REPO="${ github.repository }"
-          HASH="${ steps.sha.outputs.hash }"
-          FILE="$(basename "${ steps.vars.outputs.xpi }")"
-          cat > update.json <<JSON
-          {
-            "addons": {
-              "cychen.stats@outlook.com": {
-                "updates": [
-                  {
-                    "version": "$VERSION",
-                    "update_link": "https://github.com/$REPO/releases/download/v$VERSION/$FILE",
-                    "update_hash": "sha256:$HASH",
-                    "applications": {
-                      "zotero": {
-                        "strict_min_version": "{{ env.MIN_ZOTERO }}",
-                        "strict_max_version": "{{ env.MAX_ZOTERO }}"
-                      }
-                    }
-                  }
-                ]
-              }
-            }
-          }
-          JSON
-          echo "Generated update.json:"
-          cat update.json
-
-      - name: Publish versioned release with XPI
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.ref_name }}
-          name: ZoteroQuickLookNG-z7 ${{ steps.vars.outputs.version }}
-          files: ${{ steps.vars.outputs.xpi }}
-          draft: false
-          prerelease: false
-
-      - name: Attach update.json to 'release' tag
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: release
-          name: Update manifest
-          files: update.json
-          draft: false
-          prerelease: false
+      #
