@@ -3,8 +3,8 @@
     "cychen.stats@outlook.com": {
       "updates": [
         {
-          "version": "2.1.7",
-          "update_link": "https://github.com/canyi-chen/ZoteroQuickLookNG-z7/releases/download/v2.1.7/ZoteroQuickLookNG-z7-2.1.7.xpi",
+          "version": "2.1.8",
+          "update_link": "https://github.com/canyi-chen/ZoteroQuickLookNG-z7/releases/download/v2.1.8/ZoteroQuickLookNG-z7-2.1.8.xpi",
           "update_hash": "sha256:<SHA256>",
           "applications": {
             "zotero": {
