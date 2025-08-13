@@ -2,7 +2,7 @@
   "manifest_version": 2,
   "name": "ZoteroQuickLookNG-z7",
   "version": "2.1.9",
-  "description": "Quick Look for Zotero 7 with robust fallbacks. Release build: no debug banners, toasts, or alerts.",
+  "description": "Quick Look for Zotero 7.",
   "author": "Canyi Chen",
   "icons": {
     "96": "content/icon-96.png"
