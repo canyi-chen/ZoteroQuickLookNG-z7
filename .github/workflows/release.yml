@@ -20,22 +20,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Resolve version and decide XPI path
+      - name: Resolve version & pick XPI
         id: vars
-        shell: bash
         run: |
-          VERSION="${ github.ref_name#v }"
-          SIMPLE="dist/ZoteroQuickLookNG-z7-${VERSION}.xpi"
-          RELEASED="dist/ZoteroQuickLookNG-z7-${VERSION}-release.xpi"
-          if [[ -f "$SIMPLE" ]]; then
+            set -euo pipefail
+            # Strip leading "v" from tag name (e.g., v2.1.7 -> 2.1.7)
+            VERSION="${GITHUB_REF_NAME#v}"
+            SIMPLE="dist/${{ env.EXT_NAME }}-${VERSION}.xpi"
+            RELEASED="dist/${{ env.EXT_NAME }}-${VERSION}-release.xpi"
+
+            if [[ -f "$SIMPLE" ]]; then
             XPI="$SIMPLE"
-          elif [[ -f "$RELEASED" ]]; then
+            elif [[ -f "$RELEASED" ]]; then
             XPI="$RELEASED"
-          else
+            else
+            echo "No XPI found at: $SIMPLE or $RELEASED" >&2
             XPI=""
-          fi
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "xpi=$XPI" >> $GITHUB_OUTPUT
+            fi
+
+            echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+            echo "xpi=$XPI"       >> "$GITHUB_OUTPUT"
 
       - name: Build XPI from repository files (if not provided in dist/)
         if: steps.vars.outputs.xpi == ''
