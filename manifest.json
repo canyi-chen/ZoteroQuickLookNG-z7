@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "ZoteroQuickLookNG-z7",
-  "version": "2.1.9",
+  "version": "2.2.0",
   "description": "Quick Look for Zotero 7.",
   "author": "Canyi Chen",
   "icons": {
