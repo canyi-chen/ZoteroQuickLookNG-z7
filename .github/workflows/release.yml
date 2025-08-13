@@ -154,7 +154,7 @@ jobs:
           draft: false
           prerelease: false
 
-      # 9) Attach update.json to the static 'release' tag 
+      # 9) Attach update.json to the static 'release' tag  
       - name: Attach update.json to 'release' tag
         uses: softprops/action-gh-release@v2
         with:
